@@ -8,7 +8,7 @@ from PyPDF2 import PdfReader
 client = genai.Client()
 
 # 1. Function to read the file for the AI context
-def load_resume_text(filepath):
+def load_resume_text(filepath, output_filepath="extracted_resume.txt"):
     try:
         pdf_reader = PdfReader(filepath)
         text = ""
@@ -16,6 +16,15 @@ def load_resume_text(filepath):
             page_text = page.extract_text()
             if page_text:
                 text += page_text + "\n"
+        
+        # Save the extracted text to a file for checking
+        if text.strip():  # Only write if text was actually found
+            with open(output_filepath, "w", encoding="utf-8") as f:
+                f.write(text)
+            st.success(f"Extracted text saved to {output_filepath} for review!")
+        else:
+            st.warning("PDF was read, but no text could be extracted.")
+            
         return text
     except Exception as e:
         st.error(f"Error reading PDF file: {e}")
