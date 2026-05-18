@@ -69,7 +69,7 @@ with st.sidebar:
     if os.path.exists(RESUME_FILE_PATH):
         with open(RESUME_FILE_PATH, "rb") as file:
             st.download_button(
-                label="📄 Download PDF Resume",
+                label="📄 Download Amanda's Resume",
                 data=file,
                 file_name="Amanda_Resume.pdf",
                 mime="application/pdf",
@@ -127,7 +127,7 @@ st.markdown("""
     <p class="bento-sub">Translating HR business problems into actual insights. Not just charts — answers.</p>
   </div>
   <div class="bento-cell">
-    <div class="bento-icon">🤖</div>
+    <div class="bento-icon">💡</div>
     <p class="bento-title">AI strategy</p>
     <p class="bento-sub">Building capability so HR teams can actually use AI — not just talk about it at conferences.</p>
   </div>
