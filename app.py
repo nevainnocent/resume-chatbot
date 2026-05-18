@@ -22,7 +22,7 @@ def load_resume_text(filepath):
         return ""
 
 # Define the local path where your resume file lives in your project folder
-RESUME_FILE_PATH = "my_resume.pdf"
+RESUME_FILE_PATH = "Amanda_Mah_Resume_Apr 2026.pdf"
 
 # Streamlit UI Setup
 st.set_page_config(page_title="AI Resume Chatbot", page_icon="💼")
