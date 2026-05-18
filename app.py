@@ -61,11 +61,6 @@ PHOTO_URL = "https://pps.services.adobe.com/api/profile/41A4401D5AC4F1850A495C6A
 
 # --- Sidebar ---
 with st.sidebar:
-    st.markdown(
-        f'<img src="{PHOTO_URL}" style="width:72px!important;height:72px!important;'
-        f'border-radius:50%;object-fit:cover;display:block;margin:0 auto 12px;">',
-        unsafe_allow_html=True
-    )
     st.markdown("### Amanda Mah")
     st.markdown(
         "<p style='font-size:13px;color:#666;line-height:1.6'>"
@@ -101,11 +96,11 @@ with st.sidebar:
 
 # --- About Me Section ---
 st.markdown(f"""
-<div style="display:flex; align-items:center; gap:16px; margin-bottom:20px; margin-top:8px">
-  <img src="{PHOTO_URL}"
-       style="width:64px!important;height:64px!important;min-width:64px;min-height:64px;
-              border-radius:50%;object-fit:cover;flex-shrink:0;border:2px solid #EEEDFE;">
-  <div>
+# <div style="display:flex; align-items:center; gap:16px; margin-bottom:20px; margin-top:8px">
+#   <img src="{PHOTO_URL}"
+#        style="width:64px!important;height:64px!important;min-width:64px;min-height:64px;
+#               border-radius:50%;object-fit:cover;flex-shrink:0;border:2px solid #EEEDFE;">
+#   <div>
     <h2 style="margin:0; font-size:22px">Hi, I love turning ideas into meaningful experiences at the intersection of design, technology, and the world of work.</h2>
     <p style="margin:4px 0 0; color:#666; font-size:14px">
       People analyst. Pipeline builder. Occasional destroyer of unnecessary spreadsheets and steps.
