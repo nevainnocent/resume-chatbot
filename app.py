@@ -34,15 +34,16 @@ def load_resume_text(filepath, output_filepath="extracted_resume.txt"):
 RESUME_FILE_PATH = "Amanda_Mah_Resume_Apr 2026.pdf"
 
 # Streamlit UI Setup
-st.set_page_config(page_title="AI Resume Chatbot", page_icon="💼")
-st.title("💼 AI Resume Chatbot")
+st.set_page_config(page_title="Chat with Amanda", page_icon="💼")
+st.title("💼 Amanda's Resume Chatbot - Find out more about me!")
 
 # 2. Sidebar with Download Button
 with st.sidebar:
-    st.header("About Me")
-    st.write("Welcome to my interactive portfolio. Feel free to ask the AI any questions about my background.")
+    st.header("About Amanda")
+    st.write("I sit at the intersection of people, data, and technology in HR Analytics for 10+ years. Senator, I'm Singaporean. — Feel free to ask any questions about me")
     
     # Check if the file exists before showing the button
+# Existing PDF download button code ...
     if os.path.exists(RESUME_FILE_PATH):
         with open(RESUME_FILE_PATH, "rb") as file:
             st.download_button(
@@ -50,6 +51,18 @@ with st.sidebar:
                 data=file,
                 file_name="Amanda_Resume.pdf",
                 mime="application/pdf",
+                use_container_width=True
+            )
+            
+    # --- ADD THIS NEW PART FOR THE TXT FILE ---
+    TXT_FILE_PATH = "extracted_resume.txt"
+    if os.path.exists(TXT_FILE_PATH):
+        with open(TXT_FILE_PATH, "r", encoding="utf-8") as txt_file:
+            st.download_button(
+                label="🔍 View/Download Extracted Text",
+                data=txt_file.read(),
+                file_name="extracted_resume.txt",
+                mime="text/plain",
                 use_container_width=True
             )
     else:
