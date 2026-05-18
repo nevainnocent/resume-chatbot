@@ -57,8 +57,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-PHOTO_URL = "https://pps.services.adobe.com/api/profile/41A4401D5AC4F1850A495C6A@AdobeID/image/258ef0b6-67c1-4099-8d39-77de6cf7b15f/230"
-
 # --- Sidebar ---
 with st.sidebar:
     st.markdown("### Amanda Mah")
@@ -83,24 +81,13 @@ with st.sidebar:
     else:
         st.warning("Resume PDF not found.")
 
-    # TXT_FILE_PATH = "extracted_resume.txt"
-    # if os.path.exists(TXT_FILE_PATH):
-    #     with open(TXT_FILE_PATH, "r", encoding="utf-8") as txt_file:
-    #         st.download_button(
-    #             label="🔍 View Extracted Text",
-    #             data=txt_file.read(),
-    #             file_name="extracted_resume.txt",
-    #             mime="text/plain",
-    #             use_container_width=True
-    #         )
-
 # --- About Me Section ---
-st.markdown(f"""
-# <div style="display:flex; align-items:center; gap:16px; margin-bottom:20px; margin-top:8px">
-#   <img src="{PHOTO_URL}"
-#        style="width:64px!important;height:64px!important;min-width:64px;min-height:64px;
-#               border-radius:50%;object-fit:cover;flex-shrink:0;border:2px solid #EEEDFE;">
-#   <div>
+st.markdown("""
+<div style="display:flex; align-items:center; gap:16px; margin-bottom:20px; margin-top:8px">
+  <div style="width:56px;height:56px;border-radius:50%;background:#EEEDFE;color:#3C3489;
+              display:flex;align-items:center;justify-content:center;font-size:18px;
+              font-weight:600;flex-shrink:0;">AM</div>
+  <div>
     <h2 style="margin:0; font-size:22px">Hi, I love turning ideas into meaningful experiences at the intersection of design, technology, and the world of work.</h2>
     <p style="margin:4px 0 0; color:#666; font-size:14px">
       People analyst. Pipeline builder. Occasional destroyer of unnecessary spreadsheets and steps.
