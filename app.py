@@ -69,7 +69,7 @@ with st.sidebar:
     st.markdown(
         "<p style='font-size:13px;color:#666;line-height:1.6'>"
         "HR Analytics professional at the intersection of people, data, and technology. "
-        "10+ years building HR tech in Singapore."
+        "10+ years building HR tech. Senator, I'm Singaporean."
         "</p>",
         unsafe_allow_html=True
     )
@@ -87,16 +87,16 @@ with st.sidebar:
     else:
         st.warning("Resume PDF not found.")
 
-    TXT_FILE_PATH = "extracted_resume.txt"
-    if os.path.exists(TXT_FILE_PATH):
-        with open(TXT_FILE_PATH, "r", encoding="utf-8") as txt_file:
-            st.download_button(
-                label="🔍 View Extracted Text",
-                data=txt_file.read(),
-                file_name="extracted_resume.txt",
-                mime="text/plain",
-                use_container_width=True
-            )
+    # TXT_FILE_PATH = "extracted_resume.txt"
+    # if os.path.exists(TXT_FILE_PATH):
+    #     with open(TXT_FILE_PATH, "r", encoding="utf-8") as txt_file:
+    #         st.download_button(
+    #             label="🔍 View Extracted Text",
+    #             data=txt_file.read(),
+    #             file_name="extracted_resume.txt",
+    #             mime="text/plain",
+    #             use_container_width=True
+    #         )
 
 # --- About Me Section ---
 st.markdown("""
@@ -105,14 +105,14 @@ st.markdown("""
   <div>
     <h2 style="margin:0; font-size:22px">Hi, I turn HR data into things that matter.</h2>
     <p style="margin:4px 0 0; color:#666; font-size:14px">
-      People analyst. Pipeline builder. Occasional destroyer of unnecessary spreadsheets.
+      People analyst. Pipeline builder. Occasional destroyer of unnecessary spreadsheets and steps.
     </p>
   </div>
 </div>
-<p style="font-size:15px; line-height:1.8; color:#333; margin-bottom:20px">
+<p style="font-size:15px; line-height:2; color:#666; margin-bottom:20px">
   I'm an HR Analytics professional with a Computing background and 10+ years at the
   intersection of people, data, and tech. My job is to bridge the gap between
-  <em>"here's a bunch of HR data"</em> and <em>"here's what you should actually do about it"</em>
+  <em>"HR data"</em> and <em>"what you should actually do about it"</em>
   — and to build the infrastructure so that conversation can happen again tomorrow, automatically.
 </p>
 """, unsafe_allow_html=True)
@@ -172,7 +172,7 @@ st.markdown("""
 st.divider()
 
 # --- Chatbot Section ---
-st.markdown("### 💼 Ask me anything about my experience")
+st.markdown("### 💼 Ask me anything about my work experience")
 
 if "resume_context" not in st.session_state:
     if os.path.exists(RESUME_FILE_PATH):
