@@ -18,9 +18,9 @@ def load_resume_text(filepath, output_filepath="extracted_resume.txt"):
         if text.strip():
             with open(output_filepath, "w", encoding="utf-8") as f:
                 f.write(text)
-            st.success(f"Extracted text saved to {output_filepath} for review!")
+            # st.success(f"Extracted text saved to {output_filepath} for review!")
         else:
-            st.warning("PDF was read, but no text could be extracted.")
+            # st.warning("PDF was read, but no text could be extracted.")
         return text
     except Exception as e:
         st.error(f"Error reading PDF file: {e}")
