@@ -103,7 +103,7 @@ st.markdown("""
 <div style="display:flex; align-items:center; gap:16px; margin-bottom:20px; margin-top:8px">
   <div class="avatar">AM</div>
   <div>
-    <h2 style="margin:0; font-size:22px">Hi, I turn HR data into things that matter.</h2>
+    <h2 style="margin:0; font-size:22px">Hi, I loves creating meaningful work and experiences through design and technology - Particularly in HR.</h2>
     <p style="margin:4px 0 0; color:#666; font-size:14px">
       People analyst. Pipeline builder. Occasional destroyer of unnecessary spreadsheets and steps.
     </p>
