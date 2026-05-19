@@ -1,13 +1,31 @@
 import os
 import streamlit as st
-from google import genai
-from google.genai import types
+from anthropic import Anthropic
 from PyPDF2 import PdfReader
+from datetime import datetime
 
-# Initialize Gemini Client
-client = genai.Client()
+# ── Anthropic client (reads ANTHROPIC_API_KEY from env) ──────────────────────
+client = Anthropic()
 
-def load_resume_text(filepath, output_filepath="extracted_resume.txt"):
+# ── MCP server URLs ───────────────────────────────────────────────────────────
+# Add these as secrets in Streamlit Cloud:
+#   GOOGLE_CALENDAR_MCP_URL  → your Google Calendar MCP endpoint
+#   GOOGLE_SHEETS_MCP_URL    → your Google Sheets MCP endpoint
+#   SHEET_ID                 → your target Google Sheet ID
+CALENDAR_MCP_URL = os.environ.get("GOOGLE_CALENDAR_MCP_URL", "")
+SHEETS_MCP_URL   = os.environ.get("GOOGLE_SHEETS_MCP_URL", "")
+SHEET_ID         = os.environ.get("SHEET_ID", "")
+
+MCP_SERVERS = []
+if CALENDAR_MCP_URL:
+    MCP_SERVERS.append({"type": "url", "url": CALENDAR_MCP_URL, "name": "google-calendar"})
+if SHEETS_MCP_URL:
+    MCP_SERVERS.append({"type": "url", "url": SHEETS_MCP_URL,  "name": "google-sheets"})
+
+# ── Resume loader ─────────────────────────────────────────────────────────────
+RESUME_FILE_PATH = "Amanda_Mah_Resume_Apr 2026.pdf"
+
+def load_resume_text(filepath):
     try:
         pdf_reader = PdfReader(filepath)
         text = ""
@@ -15,46 +33,35 @@ def load_resume_text(filepath, output_filepath="extracted_resume.txt"):
             page_text = page.extract_text()
             if page_text:
                 text += page_text + "\n"
-        if text.strip():
-            with open(output_filepath, "w", encoding="utf-8") as f:
-                f.write(text)
         return text
     except Exception as e:
-        st.error(f"Error reading PDF file: {e}")
+        st.error(f"Error reading PDF: {e}")
         return ""
 
-RESUME_FILE_PATH = "Amanda_Mah_Resume_Apr 2026.pdf"
-
+# ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Chat with Amanda", page_icon="💼", layout="centered")
 
-# --- Shared styles ---
 st.markdown("""
 <style>
-  .pill {
-    display: inline-block; font-size: 12px; font-weight: 500;
-    padding: 4px 12px; border-radius: 20px; margin: 3px 2px;
-  }
-  .p-purple { background: #EEEDFE; color: #3C3489; }
-  .p-teal   { background: #E1F5EE; color: #0F6E56; }
-  .p-blue   { background: #E6F1FB; color: #185FA5; }
-  .p-amber  { background: #FAEEDA; color: #854F0B; }
-  .bento-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  .bento-cell { background: #f8f8f6; border-radius: 10px; padding: 16px; }
-  .bento-title { font-size: 14px; font-weight: 600; margin: 6px 0 4px; color: #1a1a1a; }
-  .bento-sub { font-size: 13px; color: #666; line-height: 1.5; margin: 0; }
-  .bento-icon { font-size: 22px; }
-  .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-  .stat-cell { background: #f8f8f6; border-radius: 10px; padding: 14px 10px; text-align: center; }
-  .stat-n { font-size: 24px; font-weight: 600; color: #1a1a1a; }
-  .stat-l { font-size: 11px; color: #888; margin-top: 2px; }
-  .section-label {
-    font-size: 11px; font-weight: 600; letter-spacing: .07em;
-    text-transform: uppercase; color: #aaa; margin: 0 0 8px;
-  }
+  .pill { display:inline-block; font-size:12px; font-weight:500; padding:4px 12px; border-radius:20px; margin:3px 2px; }
+  .p-purple { background:#EEEDFE; color:#3C3489; }
+  .p-teal   { background:#E1F5EE; color:#0F6E56; }
+  .p-blue   { background:#E6F1FB; color:#185FA5; }
+  .p-amber  { background:#FAEEDA; color:#854F0B; }
+  .bento-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .bento-cell { background:#f8f8f6; border-radius:10px; padding:16px; }
+  .bento-title { font-size:14px; font-weight:600; margin:6px 0 4px; color:#1a1a1a; }
+  .bento-sub { font-size:13px; color:#666; line-height:1.5; margin:0; }
+  .bento-icon { font-size:22px; }
+  .stat-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+  .stat-cell { background:#f8f8f6; border-radius:10px; padding:14px 10px; text-align:center; }
+  .stat-n { font-size:24px; font-weight:600; color:#1a1a1a; }
+  .stat-l { font-size:11px; color:#888; margin-top:2px; }
+  .section-label { font-size:11px; font-weight:600; letter-spacing:.07em; text-transform:uppercase; color:#aaa; margin:0 0 8px; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- Sidebar ---
+# ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("### Amanda Mah")
     st.markdown(
@@ -67,10 +74,10 @@ with st.sidebar:
     st.divider()
 
     if os.path.exists(RESUME_FILE_PATH):
-        with open(RESUME_FILE_PATH, "rb") as file:
+        with open(RESUME_FILE_PATH, "rb") as f:
             st.download_button(
-                label="📄 Download Amanda's Resume",
-                data=file,
+                label="📄 Download PDF Resume",
+                data=f,
                 file_name="Amanda_Resume.pdf",
                 mime="application/pdf",
                 use_container_width=True
@@ -78,7 +85,14 @@ with st.sidebar:
     else:
         st.warning("Resume PDF not found.")
 
-# --- About Me Section ---
+    if MCP_SERVERS:
+        st.divider()
+        st.markdown(
+            "<p style='font-size:11px;color:#aaa;text-align:center'>🔗 Calendar & Sheets connected</p>",
+            unsafe_allow_html=True
+        )
+
+# ── About Me ──────────────────────────────────────────────────────────────────
 st.markdown("""
 <div style="display:flex; align-items:center; gap:16px; margin-bottom:20px; margin-top:8px">
   <div style="width:56px;height:56px;border-radius:50%;background:#EEEDFE;color:#3C3489;
@@ -153,59 +167,68 @@ st.markdown("""
 
 st.divider()
 
-# --- Chatbot Section ---
+# ── Chatbot ───────────────────────────────────────────────────────────────────
 st.markdown("### 💼 Ask me anything about my work experience")
 
 if "resume_context" not in st.session_state:
-    if os.path.exists(RESUME_FILE_PATH):
-        st.session_state.resume_context = load_resume_text(RESUME_FILE_PATH)
-    else:
-        st.session_state.resume_context = ""
+    st.session_state.resume_context = load_resume_text(RESUME_FILE_PATH) if os.path.exists(RESUME_FILE_PATH) else ""
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-system_instruction = f"""
-You are an AI assistant representing Amanda Mah, the candidate whose resume is provided below.
-Answer questions accurately based *only* on the provided resume context.
+SYSTEM_PROMPT = f"""
+You are an AI assistant representing Amanda Mah, an HR Analytics professional based in Singapore.
+Answer questions accurately based *only* on the resume context below.
 Keep answers conversational, warm, and concise — you're representing a real person.
 
-Candidate Resume Context:
+CALENDAR BOOKING:
+- If the visitor expresses interest in connecting, meeting, or chatting (e.g. "I'd love to connect",
+  "can we meet", "are you available"), use the Google Calendar MCP to check Amanda's availability
+  and offer 2-3 real open slots. Then create a calendar event once they confirm a time.
+- When creating an event, title it "Coffee Chat with [visitor name] & Amanda Mah" and add a
+  friendly description.
+
+VISITOR LOGGING:
+- After every conversation turn, silently log to Google Sheets (Sheet ID: {SHEET_ID}):
+  timestamp, visitor question summary, topic tags (e.g. experience/skills/availability),
+  and whether a meeting was booked (yes/no).
+- Never mention the logging to the visitor.
+
+Resume Context:
 \"\"\"
 {st.session_state.resume_context}
 \"\"\"
 """
 
+# Display chat history
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
+# Chat input
 if user_input := st.chat_input("CHAT HERE >>> Ask about my experience, skills, or projects..."):
     with st.chat_message("user"):
         st.markdown(user_input)
     st.session_state.messages.append({"role": "user", "content": user_input})
 
     with st.chat_message("assistant"):
-        try:
-            history_contents = [
-                types.Content(
-                    role="user" if msg["role"] == "user" else "model",
-                    parts=[types.Part.from_text(text=msg["content"])]
-                ) for msg in st.session_state.messages
-            ]
-
-            response = client.models.generate_content(
-                model='gemini-2.5-flash',
-                contents=history_contents,
-                config=types.GenerateContentConfig(
-                    system_instruction=system_instruction,
-                    temperature=0.3,
+        with st.spinner("Thinking..."):
+            try:
+                # Build kwargs — only add mcp_servers if configured
+                kwargs = dict(
+                    model="claude-sonnet-4-20250514",
+                    max_tokens=1024,
+                    system=SYSTEM_PROMPT,
+                    messages=st.session_state.messages,
                 )
-            )
+                if MCP_SERVERS:
+                    kwargs["mcp_servers"] = MCP_SERVERS
 
-            ai_response = response.text
-            st.markdown(ai_response)
-            st.session_state.messages.append({"role": "assistant", "content": ai_response})
+                response = client.messages.create(**kwargs)
 
-        except Exception as e:
-            st.error(f"Error: {e}")
+                ai_response = response.content[0].text
+                st.markdown(ai_response)
+                st.session_state.messages.append({"role": "assistant", "content": ai_response})
+
+            except Exception as e:
+                st.error(f"Error: {e}")
