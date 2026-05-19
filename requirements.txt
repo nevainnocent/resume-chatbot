@@ -1,3 +1,4 @@
+anthropic
 streamlit
-google-genai
 PyPDF2
+google-generativeai
