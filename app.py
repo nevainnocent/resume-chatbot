@@ -216,7 +216,7 @@ if user_input := st.chat_input("CHAT HERE >>> Ask about my experience, skills, o
             try:
                 # Build kwargs — only add mcp_servers if configured
                 kwargs = dict(
-                    model="claude-sonnet-4-20250514",
+                    model="model="claude-sonnet-4-5",
                     max_tokens=1024,
                     system=SYSTEM_PROMPT,
                     messages=st.session_state.messages,
