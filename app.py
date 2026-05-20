@@ -1,26 +1,53 @@
 import os
+import json
 import streamlit as st
 from anthropic import Anthropic
 from PyPDF2 import PdfReader
 from datetime import datetime
+import gspread
+from google.oauth2.service_account import Credentials
 
-# ── Anthropic client (reads ANTHROPIC_API_KEY from env) ──────────────────────
+# ── Anthropic client ──────────────────────────────────────────────────────────
 client = Anthropic()
 
 # ── MCP server URLs ───────────────────────────────────────────────────────────
-# Add these as secrets in Streamlit Cloud:
-#   GOOGLE_CALENDAR_MCP_URL  → your Google Calendar MCP endpoint
-#   GOOGLE_SHEETS_MCP_URL    → your Google Sheets MCP endpoint
-#   SHEET_ID                 → your target Google Sheet ID
 CALENDAR_MCP_URL = os.environ.get("GOOGLE_CALENDAR_MCP_URL", "")
-SHEETS_MCP_URL   = os.environ.get("GOOGLE_SHEETS_MCP_URL", "")
 SHEET_ID         = os.environ.get("SHEET_ID", "")
 
+# Only add MCP if URL is valid
 MCP_SERVERS = []
-if CALENDAR_MCP_URL:
+if CALENDAR_MCP_URL and CALENDAR_MCP_URL.startswith("http"):
     MCP_SERVERS.append({"type": "url", "url": CALENDAR_MCP_URL, "name": "google-calendar"})
-if SHEETS_MCP_URL:
-    MCP_SERVERS.append({"type": "url", "url": SHEETS_MCP_URL,  "name": "google-sheets"})
+
+# ── Google Sheets logging via service account ─────────────────────────────────
+def get_sheets_client():
+    try:
+        service_account_info = json.loads(os.environ.get("GOOGLE_SERVICE_ACCOUNT", "{}"))
+        if not service_account_info:
+            return None
+        scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+        creds = Credentials.from_service_account_info(service_account_info, scopes=scopes)
+        return gspread.authorize(creds)
+    except Exception:
+        return None
+
+def log_to_sheets(question_summary, topics, meeting_booked):
+    try:
+        gc = get_sheets_client()
+        if not gc or not SHEET_ID:
+            return
+        sheet = gc.open_by_key(SHEET_ID).sheet1
+        # Add header if sheet is empty
+        if sheet.row_count == 0 or sheet.cell(1, 1).value is None:
+            sheet.append_row(["Timestamp", "Question Summary", "Topics", "Meeting Booked"])
+        sheet.append_row([
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            question_summary,
+            topics,
+            "Yes" if meeting_booked else "No"
+        ])
+    except Exception:
+        pass  # Silent fail — never show errors to visitor
 
 # ── Resume loader ─────────────────────────────────────────────────────────────
 RESUME_FILE_PATH = "Amanda_Mah_Resume_Apr 2026.pdf"
@@ -88,7 +115,7 @@ with st.sidebar:
     if MCP_SERVERS:
         st.divider()
         st.markdown(
-            "<p style='font-size:11px;color:#aaa;text-align:center'>🔗 Calendar & Sheets connected</p>",
+            "<p style='font-size:11px;color:#aaa;text-align:center'>🔗 Calendar connected</p>",
             unsafe_allow_html=True
         )
 
@@ -177,14 +204,11 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 
 SYSTEM_PROMPT = f"""
-
-CRITICAL: You must NEVER display any XML or tool tags in your responses. 
-This includes <client_attempt>, <use_mcp_tool>, <server_name>, <tool_name>, 
-<arguments>, <attempt_completion>, <result> or ANY tags with angle brackets. 
-Only output clean, natural conversational text. If you are checking a calendar 
+CRITICAL: You must NEVER display any XML or tool tags in your responses.
+This includes <client_attempt>, <use_mcp_tool>, <server_name>, <tool_name>,
+<arguments>, <attempt_completion>, <result> or ANY tags with angle brackets.
+Only output clean, natural conversational text. If you are checking a calendar
 or using a tool, simply say "Let me check..." and then show the result naturally.
-
-You are an AI assistant representing Amanda Mah...
 
 You are an AI assistant representing Amanda Mah, an HR Analytics professional based in Singapore.
 Answer questions accurately based *only* on the resume context below.
@@ -194,23 +218,17 @@ CALENDAR BOOKING:
 - If the visitor expresses interest in connecting, meeting, or chatting (e.g. "I'd love to connect",
   "can we meet", "are you available"), use the Google Calendar MCP to check Amanda's availability
   and offer 2-3 real open slots. Then create a calendar event once they confirm a time.
-- When creating an event, title it "Coffee Chat with [visitor name] & Amanda Mah" and add a
-  friendly description.
+- When creating an event, title it "Coffee Chat with [visitor name] & Amanda Mah".
+- Always set sendUpdates to "all" so email invitations are sent to all attendees.
+- NEVER share Amanda's personal email, phone number, or home address.
+  If they want to connect, only offer the calendar booking option.
 
-  When creating a calendar event, always set sendUpdates to "all" so that 
-email invitations are automatically sent to all attendees.
+IMPORTANT DATE RULES:
+- Always check availability from TODAY onwards only.
+- Today's date is {datetime.now().strftime("%B %d, %Y")}.
+- Never suggest dates in the past.
+- Use Singapore timezone (SGT, UTC+8).
 
-VISITOR LOGGING:
-- After every conversation turn, silently log to Google Sheets (Sheet ID: {SHEET_ID}):
-  timestamp, visitor question summary, topic tags (e.g. experience/skills/availability),
-  and whether a meeting was booked (yes/no).
-- Never mention the logging to the visitor.
-
-- Never share the candidate's personal email, phone number, or home address 
-with visitors. If they want to connect, only offer the calendar booking option.
-
-- Always check availability from TODAY's date onwards only. Today's date is {datetime.now().strftime("%B %d, %Y")}. 
-Never suggest dates in the past. Use Singapore timezone (SGT, UTC+8).
 Resume Context:
 \"\"\"
 {st.session_state.resume_context}
@@ -231,7 +249,6 @@ if user_input := st.chat_input("CHAT HERE >>> Ask about my experience, skills, o
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
             try:
-                # Build kwargs — only add mcp_servers if configured
                 kwargs = dict(
                     model="claude-sonnet-4-5",
                     max_tokens=1024,
@@ -246,6 +263,12 @@ if user_input := st.chat_input("CHAT HERE >>> Ask about my experience, skills, o
                 ai_response = response.content[0].text
                 st.markdown(ai_response)
                 st.session_state.messages.append({"role": "assistant", "content": ai_response})
+
+                # Silent Sheets logging
+                meeting_booked = any(word in ai_response.lower() for word in ["booked", "scheduled", "confirmed"])
+                topics = ", ".join([w for w in ["experience", "skills", "projects", "availability", "booking"]
+                                   if w in user_input.lower()])
+                log_to_sheets(user_input[:200], topics or "general", meeting_booked)
 
             except Exception as e:
                 st.error(f"Error: {e}")
