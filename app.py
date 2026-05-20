@@ -249,16 +249,12 @@ if user_input := st.chat_input("CHAT HERE >>> Ask about my experience, skills, o
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
             try:
-                kwargs = dict(
-                    model="claude-sonnet-4-5",
-                    max_tokens=1024,
-                    system=SYSTEM_PROMPT,
-                    messages=st.session_state.messages,
+                response = client.messages.create(
+                  model="claude-sonnet-4-5",
+                  max_tokens=1024,
+                  system=SYSTEM_PROMPT,
+                  messages=st.session_state.messages,
                 )
-                if MCP_SERVERS:
-                    kwargs["mcp_servers"] = MCP_SERVERS
-
-                response = client.messages.create(**kwargs)
 
                 ai_response = response.content[0].text
                 st.markdown(ai_response)
