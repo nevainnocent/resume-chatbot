@@ -234,7 +234,7 @@ Resume Context:
 {st.session_state.resume_context}
 \"\"\"
 """
-
+st.write(f"DEBUG - MCP: {MCP_SERVERS}")
 # Display chat history
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
