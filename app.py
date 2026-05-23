@@ -2,7 +2,7 @@ import os
 import json
 import streamlit as st
 from anthropic import Anthropic
-from composio_anthropic import ComposioToolSet
+from composio_anthropic import ComposioAnthropic as ComposioToolSet
 from PyPDF2 import PdfReader
 from datetime import datetime
 import gspread
