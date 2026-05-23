@@ -1,5 +1,6 @@
 anthropic>=0.40.0
 streamlit
 PyPDF2
+composio-anthropic
 gspread
 google-auth
