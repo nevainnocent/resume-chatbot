@@ -2,24 +2,20 @@ import os
 import json
 import streamlit as st
 from anthropic import Anthropic
+from composio_anthropic import ComposioToolSet, App
 from PyPDF2 import PdfReader
 from datetime import datetime
 import gspread
 from google.oauth2.service_account import Credentials
 
-# ── Anthropic client ──────────────────────────────────────────────────────────
-client = Anthropic()
+# ── Clients ───────────────────────────────────────────────────────────────────
+anthropic_client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+composio_toolset = ComposioToolSet(api_key=os.environ.get("COMPOSIO_API_KEY"))
 
-# ── MCP server URLs ───────────────────────────────────────────────────────────
-CALENDAR_MCP_URL = os.environ.get("GOOGLE_CALENDAR_MCP_URL", "")
-SHEET_ID         = os.environ.get("SHEET_ID", "")
+# ── Google Calendar tools from Composio ───────────────────────────────────────
+calendar_tools = composio_toolset.get_tools(apps=[App.GOOGLECALENDAR])
 
-# Only add MCP if URL is valid
-MCP_SERVERS = []
-if CALENDAR_MCP_URL and CALENDAR_MCP_URL.startswith("http"):
-    MCP_SERVERS.append({"type": "url", "url": CALENDAR_MCP_URL, "name": "google-calendar"})
-
-# ── Google Sheets logging via service account ─────────────────────────────────
+# ── Google Sheets logging ─────────────────────────────────────────────────────
 def get_sheets_client():
     try:
         service_account_info = json.loads(os.environ.get("GOOGLE_SERVICE_ACCOUNT", "{}"))
@@ -34,10 +30,10 @@ def get_sheets_client():
 def log_to_sheets(question_summary, topics, meeting_booked):
     try:
         gc = get_sheets_client()
-        if not gc or not SHEET_ID:
+        sheet_id = os.environ.get("SHEET_ID", "")
+        if not gc or not sheet_id:
             return
-        sheet = gc.open_by_key(SHEET_ID).sheet1
-        # Add header if sheet is empty
+        sheet = gc.open_by_key(sheet_id).sheet1
         if sheet.row_count == 0 or sheet.cell(1, 1).value is None:
             sheet.append_row(["Timestamp", "Question Summary", "Topics", "Meeting Booked"])
         sheet.append_row([
@@ -47,7 +43,7 @@ def log_to_sheets(question_summary, topics, meeting_booked):
             "Yes" if meeting_booked else "No"
         ])
     except Exception:
-        pass  # Silent fail — never show errors to visitor
+        pass
 
 # ── Resume loader ─────────────────────────────────────────────────────────────
 RESUME_FILE_PATH = "Amanda_Mah_Resume_Apr 2026.pdf"
@@ -94,12 +90,11 @@ with st.sidebar:
     st.markdown(
         "<p style='font-size:13px;color:#666;line-height:1.6'>"
         "HR Analytics professional at the intersection of people, data, and technology. "
-        "10+ years building HR tech. Senator, I'm Singaporean."
+        "10+ years building HR tech in Singapore."
         "</p>",
         unsafe_allow_html=True
     )
     st.divider()
-
     if os.path.exists(RESUME_FILE_PATH):
         with open(RESUME_FILE_PATH, "rb") as f:
             st.download_button(
@@ -111,13 +106,6 @@ with st.sidebar:
             )
     else:
         st.warning("Resume PDF not found.")
-
-    if MCP_SERVERS:
-        st.divider()
-        st.markdown(
-            "<p style='font-size:11px;color:#aaa;text-align:center'>🔗 Calendar connected</p>",
-            unsafe_allow_html=True
-        )
 
 # ── About Me ──────────────────────────────────────────────────────────────────
 st.markdown("""
@@ -204,39 +192,29 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 
 SYSTEM_PROMPT = f"""
-CRITICAL: You must NEVER display any XML or tool tags in your responses.
-This includes <client_attempt>, <use_mcp_tool>, <server_name>, <tool_name>,
-<arguments>, <attempt_completion>, <result> or ANY tags with angle brackets.
-Only output clean, natural conversational text. If you are checking a calendar
-or using a tool, simply say "Let me check..." and then show the result naturally.
-
 You are an AI assistant representing Amanda Mah, an HR Analytics professional based in Singapore.
 Answer questions accurately based *only* on the resume context below.
-Keep answers conversational, warm, and concise — you're representing a real person.
+Keep answers conversational, warm, and concise — you are representing a real person.
 
 CALENDAR BOOKING:
-- If the visitor expresses interest in connecting, meeting, or chatting (e.g. "I'd love to connect",
-  "can we meet", "are you available"), use the Google Calendar MCP to check Amanda's availability
-  and offer 2-3 real open slots. Then create a calendar event once they confirm a time.
-- When creating an event, title it "Coffee Chat with [visitor name] & Amanda Mah".
-- Always set sendUpdates to "all" so email invitations are sent to all attendees.
-- NEVER share Amanda's personal email, phone number, or home address.
-  If they want to connect, only offer the calendar booking option.
-
-IMPORTANT DATE RULES:
-- Always check availability from TODAY onwards only.
-- Today's date is {datetime.now().strftime("%B %d, %Y")}.
-- Never suggest dates in the past.
-- Use Singapore timezone (SGT, UTC+8).
+- If the visitor wants to connect or schedule a meeting, use the GOOGLECALENDAR_LIST_EVENTS 
+  tool to check Amanda's real availability for the next 2 weeks.
+- Offer 3 specific available time slots in SGT (UTC+8).
+- Once the visitor confirms a time and provides their name and email, use 
+  GOOGLECALENDAR_CREATE_EVENT to create the event with:
+  - title: "Coffee Chat with [visitor name] & Amanda Mah"
+  - attendees: visitor email + amanda's calendar
+  - sendUpdates: "all" (to send email invites)
+  - timezone: Asia/Singapore
+- Today is {datetime.now().strftime("%B %d, %Y")}. Never suggest past dates.
+- NEVER share Amanda's personal email, phone number or address.
+- Only respond in clean natural language. Never show tool names, XML, or technical syntax.
 
 Resume Context:
 \"\"\"
 {st.session_state.resume_context}
 \"\"\"
 """
-st.write(f"DEBUG - MCP: {MCP_SERVERS}")
-import anthropic
-st.write(f"DEBUG - Anthropic version: {anthropic.__version__}")
 
 # Display chat history
 for message in st.session_state.messages:
@@ -252,22 +230,43 @@ if user_input := st.chat_input("CHAT HERE >>> Ask about my experience, skills, o
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
             try:
-                response = client.messages.create(
-                  model="claude-sonnet-4-5",
-                  max_tokens=1024,
-                  system=SYSTEM_PROMPT,
-                  messages=st.session_state.messages,
-                )
+                messages = list(st.session_state.messages)
+                
+                # Agentic loop — keeps running until no more tool calls
+                while True:
+                    response = anthropic_client.messages.create(
+                        model="claude-sonnet-4-5",
+                        max_tokens=1024,
+                        system=SYSTEM_PROMPT,
+                        tools=calendar_tools,
+                        messages=messages,
+                    )
 
-                ai_response = response.content[0].text
-                st.markdown(ai_response)
-                st.session_state.messages.append({"role": "assistant", "content": ai_response})
+                    # If model wants to use a tool
+                    if response.stop_reason == "tool_use":
+                        # Execute all tool calls via Composio
+                        tool_results = composio_toolset.handle_tool_call(response)
+                        
+                        # Add assistant response and tool results to messages
+                        messages.append({"role": "assistant", "content": response.content})
+                        messages.append({"role": "user", "content": tool_results})
+                        
+                    else:
+                        # Final text response — we're done
+                        ai_response = response.content[0].text
+                        st.markdown(ai_response)
+                        st.session_state.messages.append({
+                            "role": "assistant",
+                            "content": ai_response
+                        })
 
-                # Silent Sheets logging
-                meeting_booked = any(word in ai_response.lower() for word in ["booked", "scheduled", "confirmed"])
-                topics = ", ".join([w for w in ["experience", "skills", "projects", "availability", "booking"]
-                                   if w in user_input.lower()])
-                log_to_sheets(user_input[:200], topics or "general", meeting_booked)
+                        # Silent Sheets logging
+                        meeting_booked = any(w in ai_response.lower() 
+                                           for w in ["booked", "scheduled", "confirmed", "calendar invite"])
+                        topics = ", ".join([w for w in ["experience", "skills", "projects", "availability", "booking"]
+                                          if w in user_input.lower()]) or "general"
+                        log_to_sheets(user_input[:200], topics, meeting_booked)
+                        break
 
             except Exception as e:
                 st.error(f"Error: {e}")
