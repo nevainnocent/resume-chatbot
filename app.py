@@ -235,6 +235,9 @@ Resume Context:
 \"\"\"
 """
 st.write(f"DEBUG - MCP: {MCP_SERVERS}")
+import anthropic
+st.write(f"DEBUG - Anthropic version: {anthropic.__version__}")
+
 # Display chat history
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
