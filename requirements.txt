@@ -4,3 +4,4 @@ PyPDF2
 composio-anthropic
 gspread
 google-auth
+# force reinstall
