@@ -2,7 +2,7 @@ import os
 import json
 import streamlit as st
 from anthropic import Anthropic
-from composio_anthropic import ComposioToolSet, App
+from composio_anthropic import ComposioToolSet
 from PyPDF2 import PdfReader
 from datetime import datetime
 import gspread
@@ -13,7 +13,7 @@ anthropic_client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 composio_toolset = ComposioToolSet(api_key=os.environ.get("COMPOSIO_API_KEY"))
 
 # ── Google Calendar tools from Composio ───────────────────────────────────────
-calendar_tools = composio_toolset.get_tools(apps=[App.GOOGLECALENDAR])
+calendar_tools = composio_toolset.get_tools(apps=["googlecalendar"])
 
 # ── Google Sheets logging ─────────────────────────────────────────────────────
 def get_sheets_client():
