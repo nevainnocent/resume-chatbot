@@ -23,12 +23,10 @@ def composio_headers():
     }
 
 def get_calendar_events(days_ahead=14):
-    """Fetch real events from Amanda's Google Calendar via Composio."""
     try:
         now = datetime.utcnow()
         time_min = now.strftime("%Y-%m-%dT%H:%M:%SZ")
         time_max = (now + timedelta(days=days_ahead)).strftime("%Y-%m-%dT%H:%M:%SZ")
-
         payload = {
             "connectedAccountId": CONNECTED_ACCOUNT_ID,
             "input": {
@@ -40,21 +38,17 @@ def get_calendar_events(days_ahead=14):
                 "maxResults": 50
             }
         }
-
         resp = requests.post(
             f"{COMPOSIO_BASE}/actions/GOOGLECALENDAR_LIST_EVENTS/execute",
             headers=composio_headers(),
             json=payload,
             timeout=15
         )
-        if resp.status_code == 200:
-            return resp.json()
-        return {"error": f"Status {resp.status_code}: {resp.text[:1000]}"}
+        return {"status": resp.status_code, "body": resp.json() if resp.headers.get("content-type","").startswith("application/json") else resp.text[:1000]}
     except Exception as e:
-        return {"error": f"Exception: {str(e)}"}
+        return {"error": str(e)}
 
 def create_calendar_event(title, start_datetime, end_datetime, attendee_email, description=""):
-    """Create a real calendar event via Composio."""
     try:
         payload = {
             "connectedAccountId": CONNECTED_ACCOUNT_ID,
@@ -62,59 +56,46 @@ def create_calendar_event(title, start_datetime, end_datetime, attendee_email, d
                 "calendarId": "primary",
                 "summary": title,
                 "description": description,
-                "start": {
-                    "dateTime": start_datetime,
-                    "timeZone": "Asia/Singapore"
-                },
-                "end": {
-                    "dateTime": end_datetime,
-                    "timeZone": "Asia/Singapore"
-                },
+                "start": {"dateTime": start_datetime, "timeZone": "Asia/Singapore"},
+                "end": {"dateTime": end_datetime, "timeZone": "Asia/Singapore"},
                 "attendees": [{"email": attendee_email}],
                 "sendUpdates": "all"
             }
         }
-
         resp = requests.post(
             f"{COMPOSIO_BASE}/actions/GOOGLECALENDAR_CREATE_EVENT/execute",
             headers=composio_headers(),
             json=payload,
             timeout=15
         )
-        if resp.status_code == 200:
-            return resp.json()
-        return {"error": f"Status {resp.status_code}: {resp.text}"}
+        return {"status": resp.status_code, "body": resp.json() if resp.headers.get("content-type","").startswith("application/json") else resp.text[:1000]}
     except Exception as e:
         return {"error": str(e)}
 
-# ── Anthropic tools definition ────────────────────────────────────────────────
+# ── Anthropic tools ───────────────────────────────────────────────────────────
 CALENDAR_TOOLS = [
     {
         "name": "get_calendar_availability",
-        "description": "Check Amanda's Google Calendar for available time slots in the next 2 weeks. Returns busy times so you can suggest free slots.",
+        "description": "Check Amanda's Google Calendar for busy times in the next 2 weeks so you can suggest free slots.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "days_ahead": {
-                    "type": "integer",
-                    "description": "Number of days ahead to check. Default 14.",
-                    "default": 14
-                }
+                "days_ahead": {"type": "integer", "description": "Days ahead to check. Default 14.", "default": 14}
             },
             "required": []
         }
     },
     {
         "name": "book_calendar_meeting",
-        "description": "Create a real Google Calendar event and send email invites to all attendees.",
+        "description": "Create a real Google Calendar event and send email invites.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "title": {"type": "string", "description": "Event title"},
-                "start_datetime": {"type": "string", "description": "Start time in ISO format with SGT offset e.g. 2026-05-27T10:00:00+08:00"},
-                "end_datetime": {"type": "string", "description": "End time in ISO format with SGT offset e.g. 2026-05-27T11:00:00+08:00"},
-                "attendee_email": {"type": "string", "description": "Visitor's email address"},
-                "description": {"type": "string", "description": "Event description"}
+                "title": {"type": "string"},
+                "start_datetime": {"type": "string", "description": "ISO format e.g. 2026-05-27T10:00:00+08:00"},
+                "end_datetime": {"type": "string", "description": "ISO format e.g. 2026-05-27T11:00:00+08:00"},
+                "attendee_email": {"type": "string"},
+                "description": {"type": "string"}
             },
             "required": ["title", "start_datetime", "end_datetime", "attendee_email"]
         }
@@ -122,10 +103,8 @@ CALENDAR_TOOLS = [
 ]
 
 def handle_tool_call(tool_name, tool_input):
-    """Execute real tool calls via Composio REST API."""
     if tool_name == "get_calendar_availability":
-        days = tool_input.get("days_ahead", 14)
-        result = get_calendar_events(days_ahead=days)
+        result = get_calendar_events(tool_input.get("days_ahead", 14))
         return json.dumps(result)
     elif tool_name == "book_calendar_meeting":
         result = create_calendar_event(
@@ -153,8 +132,7 @@ def log_to_sheets(question_summary, topics, meeting_booked):
             sheet.append_row(["Timestamp", "Question Summary", "Topics", "Meeting Booked"])
         sheet.append_row([
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            question_summary,
-            topics,
+            question_summary, topics,
             "Yes" if meeting_booked else "No"
         ])
     except Exception:
@@ -172,7 +150,7 @@ def load_resume_text(filepath):
             if page_text:
                 text += page_text + "\n"
         return text
-    except Exception as e:
+    except Exception:
         return ""
 
 # ── Page config ───────────────────────────────────────────────────────────────
@@ -220,6 +198,16 @@ with st.sidebar:
             )
     else:
         st.warning("Resume PDF not found.")
+
+    # ── TEMP DEBUG ──
+    st.divider()
+    st.markdown("**🔧 Debug**")
+    st.write(f"Account ID set: `{'yes' if CONNECTED_ACCOUNT_ID else 'NO - MISSING'}`")
+    st.write(f"API Key set: `{'yes' if COMPOSIO_API_KEY else 'NO - MISSING'}`")
+    if st.button("Test Composio API"):
+        with st.spinner("Testing..."):
+            result = get_calendar_events(days_ahead=7)
+            st.json(result)
 
 # ── About Me ──────────────────────────────────────────────────────────────────
 st.markdown("""
@@ -306,20 +294,19 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 
 SYSTEM_PROMPT = f"""
-If any tool returns an error, include the full error message in your response so we can debug it.
 You are an AI assistant representing Amanda Mah, an HR Analytics professional based in Singapore.
 Answer questions accurately based *only* on the resume context below.
 Keep answers conversational, warm, and concise.
 
 CALENDAR BOOKING:
-- If the visitor wants to connect or schedule a meeting, use the get_calendar_availability 
-  tool to fetch Amanda's real calendar data, then suggest 3 free slots in SGT (UTC+8).
-- Once the visitor confirms a slot and provides their name and email, use book_calendar_meeting
-  to create the real event with sendUpdates so they receive an email invite.
-- Event title format: "Coffee Chat with [visitor name] & Amanda Mah"
+- If the visitor wants to connect or schedule a meeting, use get_calendar_availability 
+  to fetch Amanda's real calendar data, then suggest 3 free slots in SGT (UTC+8).
+- Once visitor confirms a slot and provides name and email, use book_calendar_meeting
+  to create the real event. Attendees will receive an email invite automatically.
+- Event title: "Coffee Chat with [visitor name] & Amanda Mah"
 - Today is {datetime.now().strftime("%B %d, %Y")}. Never suggest past dates.
-- NEVER share Amanda's personal email, phone, or address.
-- Only respond in clean natural language. Never show tool names or technical details.
+- If a tool returns an error, show the full error details so we can debug it.
+- Only respond in clean natural language. Never show XML or technical syntax.
 
 Resume Context:
 \"\"\"
@@ -327,12 +314,10 @@ Resume Context:
 \"\"\"
 """
 
-# Display chat history
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# Chat input
 if user_input := st.chat_input("CHAT HERE >>> Ask about my experience, skills, or projects..."):
     with st.chat_message("user"):
         st.markdown(user_input)
@@ -343,7 +328,6 @@ if user_input := st.chat_input("CHAT HERE >>> Ask about my experience, skills, o
             try:
                 messages = list(st.session_state.messages)
 
-                # Agentic loop
                 while True:
                     response = anthropic_client.messages.create(
                         model="claude-sonnet-4-5",
@@ -354,13 +338,7 @@ if user_input := st.chat_input("CHAT HERE >>> Ask about my experience, skills, o
                     )
 
                     if response.stop_reason == "tool_use":
-                        # Add assistant message with tool use blocks
-                        messages.append({
-                            "role": "assistant",
-                            "content": response.content
-                        })
-
-                        # Execute each tool call
+                        messages.append({"role": "assistant", "content": response.content})
                         tool_results = []
                         for block in response.content:
                             if block.type == "tool_use":
@@ -370,25 +348,15 @@ if user_input := st.chat_input("CHAT HERE >>> Ask about my experience, skills, o
                                     "tool_use_id": block.id,
                                     "content": result
                                 })
-
-                        # Add tool results back
-                        messages.append({
-                            "role": "user",
-                            "content": tool_results
-                        })
-
+                        messages.append({"role": "user", "content": tool_results})
                     else:
-                        # Final response
                         ai_response = next(
                             (b.text for b in response.content if hasattr(b, "text")), ""
                         )
                         st.markdown(ai_response)
                         st.session_state.messages.append({
-                            "role": "assistant",
-                            "content": ai_response
+                            "role": "assistant", "content": ai_response
                         })
-
-                        # Silent Sheets logging
                         meeting_booked = any(w in ai_response.lower()
                                            for w in ["booked", "scheduled", "confirmed", "calendar invite"])
                         topics = ", ".join([w for w in ["experience", "skills", "projects", "availability", "booking"]
