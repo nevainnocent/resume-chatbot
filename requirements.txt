@@ -1,7 +1,7 @@
 anthropic>=0.40.0
 streamlit
 PyPDF2
-composio-anthropic
+composio-anthropic==0.5.9
 gspread
 google-auth
 # force reinstall
