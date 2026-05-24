@@ -14,7 +14,7 @@ COMPOSIO_API_KEY = os.environ.get("COMPOSIO_API_KEY", "")
 CONNECTED_ACCOUNT_ID = os.environ.get("COMPOSIO_CONNECTED_ACCOUNT_ID", "")
 
 # ── Composio REST API helpers ─────────────────────────────────────────────────
-COMPOSIO_BASE = "https://backend.composio.dev/api/v1"
+COMPOSIO_BASE = "https://backend.composio.dev/api/v3"
 
 def composio_headers():
     return {
