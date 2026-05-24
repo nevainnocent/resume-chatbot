@@ -1,41 +1,155 @@
 import os
 import json
+import requests
 import streamlit as st
 from anthropic import Anthropic
-from composio_anthropic import ComposioAnthropic
 from PyPDF2 import PdfReader
-from datetime import datetime
+from datetime import datetime, timedelta
 import gspread
 from google.oauth2.service_account import Credentials
 
 # ── Clients ───────────────────────────────────────────────────────────────────
 anthropic_client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
-composio_client = ComposioAnthropic(api_key=os.environ.get("COMPOSIO_API_KEY"))
-calendar_tools = composio_client.get_tools(apps=["googlecalendar"])
+COMPOSIO_API_KEY = os.environ.get("COMPOSIO_API_KEY", "")
+CONNECTED_ACCOUNT_ID = os.environ.get("COMPOSIO_CONNECTED_ACCOUNT_ID", "")
 
-# ── Google Calendar tools from Composio ───────────────────────────────────────
-tool_results = composio_client.handle_tool_call(response)
+# ── Composio REST API helpers ─────────────────────────────────────────────────
+COMPOSIO_BASE = "https://backend.composio.dev/api/v1"
+
+def composio_headers():
+    return {
+        "x-api-key": COMPOSIO_API_KEY,
+        "Content-Type": "application/json"
+    }
+
+def get_calendar_events(days_ahead=14):
+    """Fetch real events from Amanda's Google Calendar via Composio."""
+    try:
+        now = datetime.utcnow()
+        time_min = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+        time_max = (now + timedelta(days=days_ahead)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        payload = {
+            "connectedAccountId": CONNECTED_ACCOUNT_ID,
+            "input": {
+                "calendarId": "primary",
+                "timeMin": time_min,
+                "timeMax": time_max,
+                "singleEvents": True,
+                "orderBy": "startTime",
+                "maxResults": 50
+            }
+        }
+
+        resp = requests.post(
+            f"{COMPOSIO_BASE}/actions/GOOGLECALENDAR_LIST_EVENTS/execute",
+            headers=composio_headers(),
+            json=payload,
+            timeout=15
+        )
+        if resp.status_code == 200:
+            return resp.json()
+        return {"error": f"Status {resp.status_code}: {resp.text}"}
+    except Exception as e:
+        return {"error": str(e)}
+
+def create_calendar_event(title, start_datetime, end_datetime, attendee_email, description=""):
+    """Create a real calendar event via Composio."""
+    try:
+        payload = {
+            "connectedAccountId": CONNECTED_ACCOUNT_ID,
+            "input": {
+                "calendarId": "primary",
+                "summary": title,
+                "description": description,
+                "start": {
+                    "dateTime": start_datetime,
+                    "timeZone": "Asia/Singapore"
+                },
+                "end": {
+                    "dateTime": end_datetime,
+                    "timeZone": "Asia/Singapore"
+                },
+                "attendees": [{"email": attendee_email}],
+                "sendUpdates": "all"
+            }
+        }
+
+        resp = requests.post(
+            f"{COMPOSIO_BASE}/actions/GOOGLECALENDAR_CREATE_EVENT/execute",
+            headers=composio_headers(),
+            json=payload,
+            timeout=15
+        )
+        if resp.status_code == 200:
+            return resp.json()
+        return {"error": f"Status {resp.status_code}: {resp.text}"}
+    except Exception as e:
+        return {"error": str(e)}
+
+# ── Anthropic tools definition ────────────────────────────────────────────────
+CALENDAR_TOOLS = [
+    {
+        "name": "get_calendar_availability",
+        "description": "Check Amanda's Google Calendar for available time slots in the next 2 weeks. Returns busy times so you can suggest free slots.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "days_ahead": {
+                    "type": "integer",
+                    "description": "Number of days ahead to check. Default 14.",
+                    "default": 14
+                }
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "book_calendar_meeting",
+        "description": "Create a real Google Calendar event and send email invites to all attendees.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "Event title"},
+                "start_datetime": {"type": "string", "description": "Start time in ISO format with SGT offset e.g. 2026-05-27T10:00:00+08:00"},
+                "end_datetime": {"type": "string", "description": "End time in ISO format with SGT offset e.g. 2026-05-27T11:00:00+08:00"},
+                "attendee_email": {"type": "string", "description": "Visitor's email address"},
+                "description": {"type": "string", "description": "Event description"}
+            },
+            "required": ["title", "start_datetime", "end_datetime", "attendee_email"]
+        }
+    }
+]
+
+def handle_tool_call(tool_name, tool_input):
+    """Execute real tool calls via Composio REST API."""
+    if tool_name == "get_calendar_availability":
+        days = tool_input.get("days_ahead", 14)
+        result = get_calendar_events(days_ahead=days)
+        return json.dumps(result)
+    elif tool_name == "book_calendar_meeting":
+        result = create_calendar_event(
+            title=tool_input["title"],
+            start_datetime=tool_input["start_datetime"],
+            end_datetime=tool_input["end_datetime"],
+            attendee_email=tool_input["attendee_email"],
+            description=tool_input.get("description", "Coffee chat arranged via resume chatbot")
+        )
+        return json.dumps(result)
+    return json.dumps({"error": "Unknown tool"})
 
 # ── Google Sheets logging ─────────────────────────────────────────────────────
-def get_sheets_client():
-    try:
-        service_account_info = json.loads(os.environ.get("GOOGLE_SERVICE_ACCOUNT", "{}"))
-        if not service_account_info:
-            return None
-        scopes = ["https://www.googleapis.com/auth/spreadsheets"]
-        creds = Credentials.from_service_account_info(service_account_info, scopes=scopes)
-        return gspread.authorize(creds)
-    except Exception:
-        return None
-
 def log_to_sheets(question_summary, topics, meeting_booked):
     try:
-        gc = get_sheets_client()
+        service_account_info = json.loads(os.environ.get("GOOGLE_SERVICE_ACCOUNT", "{}"))
         sheet_id = os.environ.get("SHEET_ID", "")
-        if not gc or not sheet_id:
+        if not service_account_info or not sheet_id:
             return
+        scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+        creds = Credentials.from_service_account_info(service_account_info, scopes=scopes)
+        gc = gspread.authorize(creds)
         sheet = gc.open_by_key(sheet_id).sheet1
-        if sheet.row_count == 0 or sheet.cell(1, 1).value is None:
+        if not sheet.get_all_values():
             sheet.append_row(["Timestamp", "Question Summary", "Topics", "Meeting Booked"])
         sheet.append_row([
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -59,7 +173,6 @@ def load_resume_text(filepath):
                 text += page_text + "\n"
         return text
     except Exception as e:
-        st.error(f"Error reading PDF: {e}")
         return ""
 
 # ── Page config ───────────────────────────────────────────────────────────────
@@ -195,21 +308,17 @@ if "messages" not in st.session_state:
 SYSTEM_PROMPT = f"""
 You are an AI assistant representing Amanda Mah, an HR Analytics professional based in Singapore.
 Answer questions accurately based *only* on the resume context below.
-Keep answers conversational, warm, and concise — you are representing a real person.
+Keep answers conversational, warm, and concise.
 
 CALENDAR BOOKING:
-- If the visitor wants to connect or schedule a meeting, use the GOOGLECALENDAR_LIST_EVENTS 
-  tool to check Amanda's real availability for the next 2 weeks.
-- Offer 3 specific available time slots in SGT (UTC+8).
-- Once the visitor confirms a time and provides their name and email, use 
-  GOOGLECALENDAR_CREATE_EVENT to create the event with:
-  - title: "Coffee Chat with [visitor name] & Amanda Mah"
-  - attendees: visitor email + amanda's calendar
-  - sendUpdates: "all" (to send email invites)
-  - timezone: Asia/Singapore
+- If the visitor wants to connect or schedule a meeting, use the get_calendar_availability 
+  tool to fetch Amanda's real calendar data, then suggest 3 free slots in SGT (UTC+8).
+- Once the visitor confirms a slot and provides their name and email, use book_calendar_meeting
+  to create the real event with sendUpdates so they receive an email invite.
+- Event title format: "Coffee Chat with [visitor name] & Amanda Mah"
 - Today is {datetime.now().strftime("%B %d, %Y")}. Never suggest past dates.
-- NEVER share Amanda's personal email, phone number or address.
-- Only respond in clean natural language. Never show tool names, XML, or technical syntax.
+- NEVER share Amanda's personal email, phone, or address.
+- Only respond in clean natural language. Never show tool names or technical details.
 
 Resume Context:
 \"\"\"
@@ -232,29 +341,46 @@ if user_input := st.chat_input("CHAT HERE >>> Ask about my experience, skills, o
         with st.spinner("Thinking..."):
             try:
                 messages = list(st.session_state.messages)
-                
-                # Agentic loop — keeps running until no more tool calls
+
+                # Agentic loop
                 while True:
                     response = anthropic_client.messages.create(
                         model="claude-sonnet-4-5",
                         max_tokens=1024,
                         system=SYSTEM_PROMPT,
-                        tools=calendar_tools,
+                        tools=CALENDAR_TOOLS,
                         messages=messages,
                     )
 
-                    # If model wants to use a tool
                     if response.stop_reason == "tool_use":
-                        # Execute all tool calls via Composio
-                        tool_results = composio_toolset.handle_tool_call(response)
-                        
-                        # Add assistant response and tool results to messages
-                        messages.append({"role": "assistant", "content": response.content})
-                        messages.append({"role": "user", "content": tool_results})
-                        
+                        # Add assistant message with tool use blocks
+                        messages.append({
+                            "role": "assistant",
+                            "content": response.content
+                        })
+
+                        # Execute each tool call
+                        tool_results = []
+                        for block in response.content:
+                            if block.type == "tool_use":
+                                result = handle_tool_call(block.name, block.input)
+                                tool_results.append({
+                                    "type": "tool_result",
+                                    "tool_use_id": block.id,
+                                    "content": result
+                                })
+
+                        # Add tool results back
+                        messages.append({
+                            "role": "user",
+                            "content": tool_results
+                        })
+
                     else:
-                        # Final text response — we're done
-                        ai_response = response.content[0].text
+                        # Final response
+                        ai_response = next(
+                            (b.text for b in response.content if hasattr(b, "text")), ""
+                        )
                         st.markdown(ai_response)
                         st.session_state.messages.append({
                             "role": "assistant",
@@ -262,7 +388,7 @@ if user_input := st.chat_input("CHAT HERE >>> Ask about my experience, skills, o
                         })
 
                         # Silent Sheets logging
-                        meeting_booked = any(w in ai_response.lower() 
+                        meeting_booked = any(w in ai_response.lower()
                                            for w in ["booked", "scheduled", "confirmed", "calendar invite"])
                         topics = ", ".join([w for w in ["experience", "skills", "projects", "availability", "booking"]
                                           if w in user_input.lower()]) or "general"
