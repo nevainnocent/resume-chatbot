@@ -14,7 +14,7 @@ COMPOSIO_API_KEY = os.environ.get("COMPOSIO_API_KEY", "")
 CONNECTED_ACCOUNT_ID = os.environ.get("COMPOSIO_CONNECTED_ACCOUNT_ID", "")
 
 # ── Composio REST API helpers ─────────────────────────────────────────────────
-COMPOSIO_BASE = "https://backend.composio.dev/api/v3"
+COMPOSIO_BASE = "https://api.composio.dev/v3"
 
 def composio_headers():
     return {
@@ -39,7 +39,7 @@ def get_calendar_events(days_ahead=14):
             }
         }
         resp = requests.post(
-            f"{COMPOSIO_BASE}/actions/GOOGLECALENDAR_LIST_EVENTS/execute",
+            f"{COMPOSIO_BASE}/toolset/execute/GOOGLECALENDAR_LIST_EVENTS",
             headers=composio_headers(),
             json=payload,
             timeout=15
@@ -63,7 +63,7 @@ def create_calendar_event(title, start_datetime, end_datetime, attendee_email, d
             }
         }
         resp = requests.post(
-            f"{COMPOSIO_BASE}/actions/GOOGLECALENDAR_CREATE_EVENT/execute",
+            f"{COMPOSIO_BASE}/toolset/execute/GOOGLECALENDAR_CREATE_EVENT",
             headers=composio_headers(),
             json=payload,
             timeout=15
