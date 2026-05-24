@@ -49,9 +49,9 @@ def get_calendar_events(days_ahead=14):
         )
         if resp.status_code == 200:
             return resp.json()
-        return {"error": f"Status {resp.status_code}: {resp.text}"}
+        return {"error": f"Status {resp.status_code}: {resp.text[:1000]}"}
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": f"Exception: {str(e)}"}
 
 def create_calendar_event(title, start_datetime, end_datetime, attendee_email, description=""):
     """Create a real calendar event via Composio."""
@@ -306,6 +306,7 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 
 SYSTEM_PROMPT = f"""
+If any tool returns an error, include the full error message in your response so we can debug it.
 You are an AI assistant representing Amanda Mah, an HR Analytics professional based in Singapore.
 Answer questions accurately based *only* on the resume context below.
 Keep answers conversational, warm, and concise.
