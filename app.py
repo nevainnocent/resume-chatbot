@@ -1,74 +1,84 @@
 import os
 import json
-import requests
 import streamlit as st
 from anthropic import Anthropic
 from PyPDF2 import PdfReader
 from datetime import datetime, timedelta
 import gspread
 from google.oauth2.service_account import Credentials
+from googleapiclient.discovery import build
 
 # ── Clients ───────────────────────────────────────────────────────────────────
 anthropic_client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
-COMPOSIO_API_KEY = os.environ.get("COMPOSIO_API_KEY", "")
-CONNECTED_ACCOUNT_ID = os.environ.get("COMPOSIO_CONNECTED_ACCOUNT_ID", "")
 
-# ── Composio REST API helpers ─────────────────────────────────────────────────
-COMPOSIO_BASE = "https://api.composio.dev/v3"
+# ── Google Calendar via service account ───────────────────────────────────────
+AMANDA_CALENDAR = "amandamah1@gmail.com"
+SCOPES = [
+    "https://www.googleapis.com/auth/calendar",
+    "https://www.googleapis.com/auth/spreadsheets"
+]
 
-def composio_headers():
-    return {
-        "x-api-key": COMPOSIO_API_KEY,
-        "Content-Type": "application/json"
-    }
+def get_google_creds():
+    try:
+        service_account_info = json.loads(os.environ.get("GOOGLE_SERVICE_ACCOUNT", "{}"))
+        if not service_account_info:
+            return None
+        return Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
+    except Exception as e:
+        return None
 
 def get_calendar_events(days_ahead=14):
+    """Fetch real events from Amanda's Google Calendar."""
     try:
+        creds = get_google_creds()
+        if not creds:
+            return {"error": "Service account credentials not found"}
+        service = build("calendar", "v3", credentials=creds)
         now = datetime.utcnow()
-        time_min = now.strftime("%Y-%m-%dT%H:%M:%SZ")
-        time_max = (now + timedelta(days=days_ahead)).strftime("%Y-%m-%dT%H:%M:%SZ")
-        payload = {
-            "connectedAccountId": CONNECTED_ACCOUNT_ID,
-            "input": {
-                "calendarId": "primary",
-                "timeMin": time_min,
-                "timeMax": time_max,
-                "singleEvents": True,
-                "orderBy": "startTime",
-                "maxResults": 50
-            }
-        }
-        resp = requests.post(
-            f"{COMPOSIO_BASE}/toolset/execute/GOOGLECALENDAR_LIST_EVENTS",
-            headers=composio_headers(),
-            json=payload,
-            timeout=15
-        )
-        return {"status": resp.status_code, "body": resp.json() if resp.headers.get("content-type","").startswith("application/json") else resp.text[:1000]}
+        time_min = now.isoformat() + "Z"
+        time_max = (now + timedelta(days=days_ahead)).isoformat() + "Z"
+        events_result = service.events().list(
+            calendarId=AMANDA_CALENDAR,
+            timeMin=time_min,
+            timeMax=time_max,
+            maxResults=50,
+            singleEvents=True,
+            orderBy="startTime"
+        ).execute()
+        events = events_result.get("items", [])
+        busy_slots = []
+        for event in events:
+            start = event.get("start", {}).get("dateTime", event.get("start", {}).get("date"))
+            end = event.get("end", {}).get("dateTime", event.get("end", {}).get("date"))
+            busy_slots.append({"summary": event.get("summary", "Busy"), "start": start, "end": end})
+        return {"busy_slots": busy_slots, "total": len(busy_slots)}
     except Exception as e:
         return {"error": str(e)}
 
 def create_calendar_event(title, start_datetime, end_datetime, attendee_email, description=""):
+    """Create a real calendar event and send email invites."""
     try:
-        payload = {
-            "connectedAccountId": CONNECTED_ACCOUNT_ID,
-            "input": {
-                "calendarId": "primary",
-                "summary": title,
-                "description": description,
-                "start": {"dateTime": start_datetime, "timeZone": "Asia/Singapore"},
-                "end": {"dateTime": end_datetime, "timeZone": "Asia/Singapore"},
-                "attendees": [{"email": attendee_email}],
-                "sendUpdates": "all"
-            }
+        creds = get_google_creds()
+        if not creds:
+            return {"error": "Service account credentials not found"}
+        service = build("calendar", "v3", credentials=creds)
+        event = {
+            "summary": title,
+            "description": description,
+            "start": {"dateTime": start_datetime, "timeZone": "Asia/Singapore"},
+            "end": {"dateTime": end_datetime, "timeZone": "Asia/Singapore"},
+            "attendees": [
+                {"email": AMANDA_CALENDAR},
+                {"email": attendee_email}
+            ],
+            "sendUpdates": "all"
         }
-        resp = requests.post(
-            f"{COMPOSIO_BASE}/toolset/execute/GOOGLECALENDAR_CREATE_EVENT",
-            headers=composio_headers(),
-            json=payload,
-            timeout=15
-        )
-        return {"status": resp.status_code, "body": resp.json() if resp.headers.get("content-type","").startswith("application/json") else resp.text[:1000]}
+        created = service.events().insert(
+            calendarId=AMANDA_CALENDAR,
+            body=event,
+            sendUpdates="all"
+        ).execute()
+        return {"success": True, "event_id": created.get("id"), "link": created.get("htmlLink")}
     except Exception as e:
         return {"error": str(e)}
 
@@ -76,7 +86,7 @@ def create_calendar_event(title, start_datetime, end_datetime, attendee_email, d
 CALENDAR_TOOLS = [
     {
         "name": "get_calendar_availability",
-        "description": "Check Amanda's Google Calendar for busy times in the next 2 weeks so you can suggest free slots.",
+        "description": "Check Amanda's real Google Calendar for busy times in the next 2 weeks so you can suggest free slots.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -87,15 +97,15 @@ CALENDAR_TOOLS = [
     },
     {
         "name": "book_calendar_meeting",
-        "description": "Create a real Google Calendar event and send email invites.",
+        "description": "Create a real Google Calendar event and send email invites to all attendees.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "title": {"type": "string"},
-                "start_datetime": {"type": "string", "description": "ISO format e.g. 2026-05-27T10:00:00+08:00"},
-                "end_datetime": {"type": "string", "description": "ISO format e.g. 2026-05-27T11:00:00+08:00"},
-                "attendee_email": {"type": "string"},
-                "description": {"type": "string"}
+                "title": {"type": "string", "description": "Event title"},
+                "start_datetime": {"type": "string", "description": "ISO format with SGT offset e.g. 2026-05-27T10:00:00+08:00"},
+                "end_datetime": {"type": "string", "description": "ISO format with SGT offset e.g. 2026-05-27T11:00:00+08:00"},
+                "attendee_email": {"type": "string", "description": "Visitor email address"},
+                "description": {"type": "string", "description": "Event description"}
             },
             "required": ["title", "start_datetime", "end_datetime", "attendee_email"]
         }
@@ -112,7 +122,7 @@ def handle_tool_call(tool_name, tool_input):
             start_datetime=tool_input["start_datetime"],
             end_datetime=tool_input["end_datetime"],
             attendee_email=tool_input["attendee_email"],
-            description=tool_input.get("description", "Coffee chat arranged via resume chatbot")
+            description=tool_input.get("description", "Coffee chat arranged via Amanda's resume chatbot")
         )
         return json.dumps(result)
     return json.dumps({"error": "Unknown tool"})
@@ -124,8 +134,7 @@ def log_to_sheets(question_summary, topics, meeting_booked):
         sheet_id = os.environ.get("SHEET_ID", "")
         if not service_account_info or not sheet_id:
             return
-        scopes = ["https://www.googleapis.com/auth/spreadsheets"]
-        creds = Credentials.from_service_account_info(service_account_info, scopes=scopes)
+        creds = Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
         gc = gspread.authorize(creds)
         sheet = gc.open_by_key(sheet_id).sheet1
         if not sheet.get_all_values():
@@ -202,9 +211,9 @@ with st.sidebar:
     # ── TEMP DEBUG ──
     st.divider()
     st.markdown("**🔧 Debug**")
-    st.write(f"Account ID set: `{'yes' if CONNECTED_ACCOUNT_ID else 'NO - MISSING'}`")
-    st.write(f"API Key set: `{'yes' if COMPOSIO_API_KEY else 'NO - MISSING'}`")
-    if st.button("Test Composio API"):
+    creds_check = get_google_creds()
+    st.write(f"Service account: `{'✅ connected' if creds_check else '❌ missing'}`")
+    if st.button("Test Calendar API"):
         with st.spinner("Testing..."):
             result = get_calendar_events(days_ahead=7)
             st.json(result)
@@ -300,12 +309,12 @@ Keep answers conversational, warm, and concise.
 
 CALENDAR BOOKING:
 - If the visitor wants to connect or schedule a meeting, use get_calendar_availability 
-  to fetch Amanda's real calendar data, then suggest 3 free slots in SGT (UTC+8).
+  to fetch Amanda's real calendar busy slots, then suggest 3 free time slots in SGT (UTC+8).
 - Once visitor confirms a slot and provides name and email, use book_calendar_meeting
-  to create the real event. Attendees will receive an email invite automatically.
+  to create the real event. Both Amanda and the visitor will receive email invites.
 - Event title: "Coffee Chat with [visitor name] & Amanda Mah"
 - Today is {datetime.now().strftime("%B %d, %Y")}. Never suggest past dates.
-- If a tool returns an error, show the full error details so we can debug it.
+- If a tool returns an error, show the full error so we can debug.
 - Only respond in clean natural language. Never show XML or technical syntax.
 
 Resume Context:
@@ -327,7 +336,6 @@ if user_input := st.chat_input("CHAT HERE >>> Ask about my experience, skills, o
         with st.spinner("Thinking..."):
             try:
                 messages = list(st.session_state.messages)
-
                 while True:
                     response = anthropic_client.messages.create(
                         model="claude-sonnet-4-5",
@@ -336,7 +344,6 @@ if user_input := st.chat_input("CHAT HERE >>> Ask about my experience, skills, o
                         tools=CALENDAR_TOOLS,
                         messages=messages,
                     )
-
                     if response.stop_reason == "tool_use":
                         messages.append({"role": "assistant", "content": response.content})
                         tool_results = []
@@ -363,6 +370,5 @@ if user_input := st.chat_input("CHAT HERE >>> Ask about my experience, skills, o
                                           if w in user_input.lower()]) or "general"
                         log_to_sheets(user_input[:200], topics, meeting_booked)
                         break
-
             except Exception as e:
                 st.error(f"Error: {e}")
