@@ -316,6 +316,9 @@ CALENDAR BOOKING:
 - Today is {datetime.now().strftime("%B %d, %Y")}. Never suggest past dates.
 - If a tool returns an error, show the full error so we can debug.
 - Only respond in clean natural language. Never show XML or technical syntax.
+- When displaying available slots, always convert times to SGT (UTC+8) before 
+  calculating the day name. For example, UTC Thursday 11pm = SGT Friday. 
+  Always verify the day name matches the date in the Asia/Singapore timezone.
 
 Resume Context:
 \"\"\"
