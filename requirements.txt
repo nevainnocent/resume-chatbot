@@ -1,0 +1,7 @@
+anthropic>=0.40.0
+streamlit
+PyPDF2
+gspread
+google-auth
+google-api-python-client
+requests
